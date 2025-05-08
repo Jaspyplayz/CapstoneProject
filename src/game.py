@@ -1,6 +1,6 @@
 import pygame 
 from src.player import Player 
-from game_states import MenuState, PlayState
+from game_states import *
 
 class Game:
 
@@ -26,17 +26,20 @@ class Game:
 
             #Change game state
             if self.running:
-                self.state.handle_events(event)
+                self.state.handle_events(events)
             
 
     def update(self):
-        self.player.update()
+        self.state.update()
 
     def render(self):
         self.screen.fill((0,0,0))
-        self.player.draw(self.screen)
+        self.state.render(self.screen)
         pygame.display.flip()
 
+    def change_state(self, new_state):
+
+        self.state = new_state
     
     def run(self):
         while self.running:
