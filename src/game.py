@@ -12,7 +12,7 @@ class Game:
         self.running = True
         self.player = Player(400,300)
 
-        self.state = MenuState(self)
+        self.state = StateFactory.create_state("menu", self)
 
 
     def handle_events(self):
@@ -37,9 +37,16 @@ class Game:
         self.state.render(self.screen)
         pygame.display.flip()
 
-    def change_state(self, new_state):
+    def change_state(self, new_state, **kwargs):
 
-        self.state = new_state
+        self.state = StateFactory.create_state(new_state, self, **kwargs)
+
+    def reset_game(self):
+
+        self.player = Player(400, 300)
+        self.score = 0
+        self.enemies = []
+        self.collectibles = []
     
     def run(self):
         while self.running:

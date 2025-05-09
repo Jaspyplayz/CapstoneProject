@@ -1,19 +1,24 @@
 from game_states.game_state import GameState
 import pygame
 
-class MenuState(GameState):
+class PausedState(GameState):
     
-    def __init__(self, game):
+    def __init__(self, game, previous_state):
         super().__init__(game)
-        self.options = ["Play", "Options", "Quit"]
+
+        self.previous_state = previous_state
+
+        self.options = ["Resume", "Options", "Quit to Menu", "Quit"]
         self.selected = 0
 
         self.font = pygame.font.Font(None, 48)
         self.title_font = pygame.font.Font(None, 72)
-        self.subtitle_font = pygame.font.Font(None, 72)
-
         self.selected_color = (255, 255, 0)
         self.normal_color = (255, 255, 255)
+
+        self.overlay = pygame.Surface((self.game.screen.get_width(), self.game.screen.get_height()))
+        self.overlay.set_alpha(120)
+        self.overlay.fill((0,0,0))
 
     def handle_events(self, events):
         for event in events:
@@ -24,13 +29,24 @@ class MenuState(GameState):
                     self.selected = (self.selected + 1) % len(self.options)
                 elif event.key == pygame.K_RETURN:
                     self.select_option()
+                elif event.key == pygame.K_ESCAPE:
+                    self.resume_game()
 
     def select_option(self):
 
-        if self.options[self.selected] == "Play":
-            self.game.change_state("play")
+        if self.options[self.selected] == "Resume":
+            self.resume_game()
+        elif self.options[self.selected] == "Options":
+            pass
+        elif self.options[self.selected] == "Quit to Menu":
+            self.game.reset_game()
+            self.game.change_state("menu")
         elif self.options[self.selected] == "Quit":
             self.game.running = False
+
+    def resume_game(self):
+
+        self.game.state = self.previous_state
 
     def update(self):
 
@@ -38,17 +54,16 @@ class MenuState(GameState):
 
     def render(self, screen):
 
-        screen.fill((0,0,0))
+        self.previous_state.render(screen)
 
-        title = self.title_font.render("League of Legends", True, (100,200,255))
+        screen.blit(self.overlay, (0,0))
+
+        title = self.title_font.render("PAUSED", True, (255,255,255))
         title_rect = title.get_rect(center=(screen.get_width() // 2, 100))
         screen.blit(title, title_rect)
 
-        subtitle = self.subtitle_font.render("Main Menu", True, (80, 160, 200))
-        subtitle_rect = subtitle.get_rect(center=(screen.get_width() // 2, title_rect.bottom + 50))
-        screen.blit(subtitle, subtitle_rect)
+        menu_y = 300
 
-        menu_y = 250
         for i, option in enumerate(self.options):
 
             color = self.selected_color if i == self.selected else self.normal_color
@@ -58,6 +73,7 @@ class MenuState(GameState):
 
             if i == self.selected:
                 pygame.draw.circle(screen, color, (text_rect.left - 20, text_rect.centery), 7)
+
         
         
 
