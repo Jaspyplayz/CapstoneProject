@@ -13,8 +13,11 @@ class StateFactory:
         
         elif state_name == "pause":
             from game_states.paused_state import PausedState
-            previous_state = kwargs.get("previous_state", game.state)
-            return PausedState(game, previous_state)
+            return PausedState(game)
+        
+        elif state_name == "options":
+            from game_states.option_state import OptionsState
+            return OptionsState(game)
         
      
         
