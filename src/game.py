@@ -128,7 +128,6 @@ class Game:
         self.state.update()
 
     def render(self):
-        self.screen.fill((0, 0, 0))
         if self.state:
             self.state.render(self.screen)
         pygame.display.flip()

@@ -35,12 +35,12 @@ class MenuState(GameState):
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
                     self.selected = (self.selected - 1) % len(self.options)
-                    self.game.assets.sounds["hover"].play()
+                    self.game.assets.play_sound("hover")
                 elif event.key == pygame.K_DOWN:
                     self.selected = (self.selected + 1) % len(self.options)
-                    self.game.assets.sounds["hover"].play()
+                    self.game.assets.play_sound("hover")
                 elif event.key == pygame.K_RETURN:
-                    self.game.assets.sounds["select"].play()
+                    self.game.assets.play_sound("select")
                     self.select_option()
                     
 
