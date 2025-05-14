@@ -143,6 +143,9 @@ class Game:
         self.enemies = []
         self.collectibles = []
     
+    def draw(self, dt):
+        pass
+    
     def run(self):
         """Main game loop."""
         # Start menu music
