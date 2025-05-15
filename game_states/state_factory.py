@@ -19,6 +19,10 @@ class StateFactory:
             from game_states.option_state import OptionsState
             return OptionsState(game)
         
+        elif state_name == "game_over":
+            from game_states.game_over import GameOverState
+            return GameOverState(game, game.score)
+        
      
         
 

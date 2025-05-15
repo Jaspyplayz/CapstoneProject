@@ -1,8 +1,9 @@
 import pygame 
 import json
 import os
-from src.player import Player 
+from characters.player import BasePlayer 
 from src.asset_manager import AssetManager
+from src.enemy_manager import EnemyManager  
 from game_states import *
 from src.constants import (
     GAME_TITLE, SCREEN_WIDTH, SCREEN_HEIGHT, FPS, STATE_MENU,
@@ -26,10 +27,13 @@ class Game:
         pygame.display.set_caption(GAME_TITLE)
         self.clock = pygame.time.Clock()
         self.running = True
-        self.player = Player(400, 300)
+        self.player = BasePlayer(400, 300)
 
         self.assets = AssetManager()
         self.assets.preload_common_assets()
+        
+        # Load projectile assets
+        self.load_projectile_assets()
         
         # Set volumes from settings
         music_volume = self.settings.get("music_volume", DEFAULT_MUSIC_VOLUME * 100) / 100
@@ -37,12 +41,36 @@ class Game:
         self.assets.set_music_volume(music_volume)
         self.assets.set_sfx_volume(sfx_volume)
 
-        self.state = StateFactory.create_state(STATE_MENU, self)
-        
         # Initialize game variables
         self.score = 0
-        self.enemies = []
-        self.collectibles = []
+        
+        # Initialize enemy manager
+        self.enemy_manager = EnemyManager(self)
+        
+        # Load enemy assets
+        self.load_enemy_assets()
+        
+        self.state = StateFactory.create_state(STATE_MENU, self)
+
+    def load_projectile_assets(self):
+        """Load projectile-related assets"""
+        # Load projectile images (you can create these images)
+        self.assets.load_image("projectile", "projectiles/basic_projectile.png")
+        
+        # Load projectile sounds
+        self.assets.load_sound("projectile_fire", "projectiles/fire.wav")
+        self.assets.load_sound("projectile_hit", "projectiles/hit.wav")
+
+    def load_enemy_assets(self):
+        """Load enemy-related assets"""
+        # Load enemy images
+        self.assets.load_image("enemy", "enemies/basic_enemy.png")
+        self.assets.load_image("fast_enemy", "enemies/fast_enemy.png")
+        self.assets.load_image("tank_enemy", "enemies/tank_enemy.png")
+        
+        # Load enemy sounds
+        self.assets.load_sound("enemy_hit", "enemies/hit.wav")
+        self.assets.load_sound("enemy_death", "enemies/death.wav")
 
     def __setattr__(self, name, value):
         if name == 'state' and value is None:
@@ -124,8 +152,42 @@ class Game:
             print("ERROR: Game state is None! Switching to default state...")
             self.change_state(STATE_MENU)  # Switch to a safe default state
             return
-            
+        
+        # Update the current game state with delta time
         self.state.update()
+        
+        # If we're in gameplay state, check for projectile collisions
+        if isinstance(self.state, PlayState):
+            self.check_projectile_collisions()
+
+    def check_projectile_collisions(self):
+        """Check for collisions between projectiles and enemies"""
+        # Get active projectiles from player
+        projectiles = self.player.get_active_projectiles()
+        
+        # Check each projectile against each enemy
+        for projectile in projectiles:
+            if not projectile.active:
+                continue
+                
+            for enemy in self.enemy_manager.enemies:
+                if enemy.alive and projectile.rect.colliderect(enemy.rect):
+                    # Projectile hit an enemy
+                    enemy_killed = enemy.take_damage(projectile.damage)
+                    projectile.active = False  # Deactivate the projectile
+                    
+                    # Play hit sound
+                    self.assets.play_sound("projectile_hit")
+                    
+                    # Add score if enemy was killed
+                    if enemy_killed:
+                        self.score += enemy.score_value
+                        self.assets.play_sound("enemy_death")
+                    else:
+                        self.assets.play_sound("enemy_hit")
+                    
+                    # Break inner loop - one projectile hits one enemy
+                    break
 
     def render(self):
         if self.state:
@@ -138,13 +200,11 @@ class Game:
 
     def reset_game(self):
         """Reset the game to its initial state."""
-        self.player = Player(400, 300)
+        self.player = BasePlayer(400, 300)
         self.score = 0
-        self.enemies = []
-        self.collectibles = []
-    
-    def draw(self, dt):
-        pass
+        
+        # Reset enemy manager
+        self.enemy_manager = EnemyManager(self)
     
     def run(self):
         """Main game loop."""

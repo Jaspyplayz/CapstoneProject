@@ -88,3 +88,10 @@ MENU_START_Y = 250
 DEBUG_MODE = False
 SHOW_FPS = True
 SHOW_HITBOXES = False
+
+#Enemy Manager settings
+SPAWN_DELAY = 180
+MAX_ENEMIES = 10
+
+#Abilities and Summoner Spells
+FLASH_COOLDOWN = 60

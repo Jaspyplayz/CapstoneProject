@@ -59,7 +59,7 @@ class AssetManager:
             "hover.wav": ui_sound_dir,
             "select.wav": ui_sound_dir,
             "menu_music.mp3": self.sound_dir,
-            "game_music.mp3": self.sound_dir
+            "game_music.mp3": self.sound_dir,
         }
         
         for filename, directory in required_sounds.items():
@@ -87,6 +87,7 @@ class AssetManager:
                         with open(filepath, 'w') as f:
                             f.write('')
                         print(f"Warning: Created empty MP3 file {filepath}. Replace with real MP3.")
+
                 except Exception as e:
                     print(f"Failed to create placeholder sound file {filepath}: {e}")
 

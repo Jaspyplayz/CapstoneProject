@@ -3,7 +3,7 @@ from game_states.game_state import GameState
 from src.constants import (
     WHITE, YELLOW, STATE_PLAY, STATE_OPTIONS,
     TITLE_FONT_SIZE, DEFAULT_FONT, NORMAL_FONT_SIZE, HEADING_FONT_SIZE,
-    MENU_START_Y, MENU_SPACING
+    MENU_START_Y, MENU_SPACING, FPS
 )
 
 
@@ -12,7 +12,9 @@ class MenuState(GameState):
     def __init__(self, game):
         super().__init__(game)
         self.options = ["Play", "Options", "Quit"]
-        self.selected = 0
+        self.selected = 0  # Keyboard selection
+        self.hovered = -1  # Mouse hover (-1 means no hover)
+        self.option_rects = []  # Store rectangles for mouse detection
 
         self.selected_color = YELLOW
         self.normal_color = WHITE
@@ -26,9 +28,8 @@ class MenuState(GameState):
             self.font = pygame.font.Font(None, 48)
             self.title_font = pygame.font.Font(None, 72)
             self.subtitle_font = pygame.font.Font(None, 72)
-
+        
         game.assets.play_music()
-
 
     def handle_events(self, events):
         for event in events:
@@ -41,24 +42,44 @@ class MenuState(GameState):
                     self.game.assets.play_sound("hover")
                 elif event.key == pygame.K_RETURN:
                     self.game.assets.play_sound("select")
-                    self.select_option()
-                    
+                    self.select_option(self.selected)
+            
+            # Handle mouse movement for hover effect
+            elif event.type == pygame.MOUSEMOTION:
+                mouse_pos = pygame.mouse.get_pos()
+                old_hovered = self.hovered
+                self.hovered = -1  # Reset hover
+                
+                for i, rect in enumerate(self.option_rects):
+                    if rect.collidepoint(mouse_pos):
+                        self.hovered = i
+                        break
+                
+                # Play sound only if hover changed
+                if old_hovered != self.hovered and self.hovered != -1:
+                    self.game.assets.play_sound("hover")
+            
+            # Handle mouse clicks
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
+                mouse_pos = pygame.mouse.get_pos()
+                for i, rect in enumerate(self.option_rects):
+                    if rect.collidepoint(mouse_pos):
+                        self.game.assets.play_sound("select")
+                        self.select_option(i)
+                        break
 
-    def select_option(self):
-
-        if self.options[self.selected] == "Play":
+    def select_option(self, option_index):
+        if self.options[option_index] == "Play":
             self.game.change_state(STATE_PLAY)
-        elif self.options[self.selected] == "Options":
+        elif self.options[option_index] == "Options":
             self.game.change_state(STATE_OPTIONS)
-        elif self.options[self.selected] == "Quit":
+        elif self.options[option_index] == "Quit":
             self.game.running = False
 
     def update(self):
-
         pass
 
     def render(self, screen):
-
         screen.fill((0,0,0))
 
         title = self.title_font.render("League of Legends", True, (100,200,255))
@@ -70,15 +91,41 @@ class MenuState(GameState):
         screen.blit(subtitle, subtitle_rect)
 
         menu_y = MENU_START_Y
+        self.option_rects = []  # Reset option rects each frame
+        
         for i, option in enumerate(self.options):
-
-            color = self.selected_color if i == self.selected else self.normal_color
+            # Determine color based on keyboard selection or mouse hover
+            if i == self.selected or i == self.hovered:
+                color = self.selected_color
+            else:
+                color = self.normal_color
+                
             text = self.font.render(option, True, color)
             text_rect = text.get_rect(center=(screen.get_width() // 2, menu_y + i * MENU_SPACING))
             screen.blit(text, text_rect)
+            
+            # Store the rectangle for mouse detection
+            self.option_rects.append(text_rect.inflate(40, 20))  # Make hitbox larger for easier clicking
 
+            # Only show selection indicator for keyboard selection
             if i == self.selected:
                 pygame.draw.circle(screen, color, (text_rect.left - 20, text_rect.centery), 7)
+                
+        # Instructions
+        instructions = [
+            "↑↓: Navigate",
+            "Enter: Select",
+            "Mouse: Click to select"
+        ]
         
-        
-
+        instruction_y = screen.get_height() - 100
+        instruction_font = pygame.font.Font(None, 24)
+        for instruction in instructions:
+            text = instruction_font.render(instruction, True, (180, 180, 180))
+            text_rect = text.get_rect(center=(screen.get_width() // 2, instruction_y))
+            screen.blit(text, text_rect)
+            instruction_y += 20
+            
+        # Debug: Uncomment to see clickable areas
+        # for rect in self.option_rects:
+        #     pygame.draw.rect(screen, (255, 0, 0), rect, 1)

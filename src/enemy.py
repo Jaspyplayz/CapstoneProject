@@ -4,74 +4,96 @@ import math
 from src.constants import SCREEN_WIDTH, SCREEN_HEIGHT, RED, GREEN
 
 class Enemy:
-
-    def __init__(self, game, speed, health, x = None , y = None):
-
+    def __init__(self, game, speed, health, x=None, y=None):
         self.game = game
 
-        #Enemy coordinate spawnpoint 
+        # Enemy coordinate spawnpoint 
         self.x = x if x is not None else random.randint(0, SCREEN_WIDTH - 50)
         self.y = y if y is not None else random.randint(0, SCREEN_HEIGHT - 50)
 
-        #Enemy properties
+        # Enemy properties
         self.width = 40
         self.height = 40
         self.speed = speed
         self.health = health
         self.max_health = health
+        self.detection_radius = 250  # How far the enemy can detect the player
+        self.score_value = 100  # Points awarded when killed
 
-        #Load enemies image
-
+        # Load enemies image
         self.image = self.game.assets.load_image("enemy", "enemies/basic_enemy.jpg")
-        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        
+        # Create a more accurate hitbox (slightly smaller than the visual sprite)
+        hitbox_reduction = 4  # pixels on each side
+        self.rect = pygame.Rect(
+            self.x + hitbox_reduction,
+            self.y + hitbox_reduction,
+            self.width - (hitbox_reduction * 2),
+            self.height - (hitbox_reduction * 2)
+        )
+        
+        # Create a mask for pixel-perfect collision if needed
+        self.mask = pygame.mask.from_surface(self.image)
 
-
-        #movement vectors
-
+        # Movement vectors
         self.velocity_x = 0
         self.velocity_y = 0
         self.angle = random.uniform(0, 2 * math.pi)
         self.set_velocity_from_angle()
 
-        #Direction change timer
-
+        # Direction change timer
         self.direction_change_timer = 0
         self.direction_change_delay = random.randint(60, 120)
 
-        #Sound effects
-
+        # Sound effects
         self.hit_sound = "enemy_hit"
         self.death_sound = "enemy_death"
 
-        #State
-
+        # State
         self.alive = True
+        
+        # Hit effect
+        self.hit_flash = 0
+        self.hit_flash_duration = 5
     
     def set_velocity_from_angle(self):
-
         self.velocity_x = math.cos(self.angle) * self.speed
         self.velocity_y = math.sin(self.angle) * self.speed
 
     def update(self):
-        
-        #If enemy is not alive then return and don't update
+        # If enemy is not alive then return and don't update
         if not self.alive:
             return 
         
-        #handle direction changes
+        # Update hit flash effect
+        if self.hit_flash > 0:
+            self.hit_flash -= 1
+        
+        # Check if player is within detection radius
+        player_x = self.game.player.x + self.game.player.width/2
+        player_y = self.game.player.y + self.game.player.height/2
+        
+        dx = player_x - (self.x + self.width/2)
+        dy = player_y - (self.y + self.height/2)
+        distance_to_player = math.sqrt(dx*dx + dy*dy)
+        
+        # If player is close, seek them
+        if distance_to_player < self.detection_radius:
+            # Increase aggression as enemy gets closer to player
+            aggression = 0.3 + (1 - distance_to_player / self.detection_radius) * 0.4
+            self.seek_player(player_x, player_y, aggression)
+        else:
+            # Handle direction changes
+            self.direction_change_timer += 1
+            if self.direction_change_timer >= self.direction_change_delay:
+                self.change_direction()
+                self.direction_change_timer = 0
 
-        self.direction_change_timer += 1
-
-        if self.direction_change_timer >= self.direction_change_delay:
-            self.change_direction()
-            self.direction_change_timer = 0
-
-
-        #Move based on velocity
-
+        # Move based on velocity
         self.x += self.velocity_x
         self.y += self.velocity_y
 
+        # Boundary handling
         if self.x < 0:
             self.x = 0
             self.bounce_horizontal()
@@ -86,8 +108,10 @@ class Enemy:
             self.y = SCREEN_HEIGHT - self.height
             self.bounce_vertical()
 
-        self.rect.x = int(self.x)
-        self.rect.y = int(self.y)
+        # Update rect position - with the hitbox offset
+        hitbox_reduction = 4
+        self.rect.x = int(self.x) + hitbox_reduction
+        self.rect.y = int(self.y) + hitbox_reduction
 
     def bounce_horizontal(self):
         self.angle = math.pi - self.angle
@@ -98,56 +122,81 @@ class Enemy:
         self.set_velocity_from_angle()
 
     def change_direction(self):
-
-        self.angle = random.uniform(0, 2 * math.pi )
+        self.angle = random.uniform(0, 2 * math.pi)
         self.set_velocity_from_angle()
         self.direction_change_delay = random.randint(60, 120)
 
-    def seek_player(self, player_x, player_y, aggression = 0.5):
-
-        dx = player_x - self.x
-        dy = player_y - self.y
+    def seek_player(self, player_x, player_y, aggression=0.5):
+        dx = player_x - (self.x + self.width/2)
+        dy = player_y - (self.y + self.height/2)
         angle_to_player = math.atan2(dy, dx)
 
+        # Blend current angle with angle to player based on aggression
         self.angle = (1-aggression) * self.angle + aggression * angle_to_player
+        
+        # Add slight randomness to movement
         self.angle += random.uniform(-0.3, 0.3)
-
         self.set_velocity_from_angle()
 
     def take_damage(self, amount):
-
+        """
+        Apply damage to the enemy
+        Returns True if the enemy died, False otherwise
+        """
         if not self.alive:
-            return
+            return False
         
         self.health -= amount
-
-        self.game.assets.play_sound(self.hit_sound)
+        self.hit_flash = self.hit_flash_duration  # Activate hit flash effect
+        
+        # Play hit sound
+        if hasattr(self.game, 'assets'):
+            self.game.assets.play_sound(self.hit_sound)
 
         if self.health <= 0:
             self.die()
+            return True  # Enemy died
+        return False  # Enemy still alive
 
     def die(self):
-
+        """Handle enemy death"""
         self.alive = False
         
-        self.game.assets.play_sound(self.death_sound)
-
-        self.game.score += 100
+        # Play death sound
+        if hasattr(self.game, 'assets'):
+            self.game.assets.play_sound(self.death_sound)
+        
+        # No need to add score here, it's handled in the PlayState
 
     def draw(self, surface):
-
         if not self.alive:
             return
         
-        surface.blit(self.image, (self.x, self.y))
-
-        health_bar_width = 10
-        health_ratio = self.health / self.max_health
-
-        pygame.draw.rect(surface, RED, (self.x+5, self.y-10, health_bar_width, 5))
-        pygame.draw.rect(surface, GREEN, (self.x+5, self.y-10, health_bar_width * health_ratio, 5))
-
-    
-
-
+        # Create a copy of the image for hit flash effect
+        current_image = self.image.copy() if self.hit_flash == 0 else self.create_hit_effect()
         
+        # Draw enemy
+        surface.blit(current_image, (self.x, self.y))
+
+        # Draw health bar
+        health_bar_width = self.width - 10  # Make it almost as wide as the enemy
+        health_ratio = max(0, self.health / self.max_health)
+
+        # Health bar background
+        pygame.draw.rect(surface, RED, 
+                         (self.x + 5, self.y - 10, health_bar_width, 5))
+        
+        # Health bar foreground
+        pygame.draw.rect(surface, GREEN, 
+                         (self.x + 5, self.y - 10, health_bar_width * health_ratio, 5))
+        
+        # Debug: Draw hitbox (uncomment for debugging)
+        # pygame.draw.rect(surface, (255, 0, 255), self.rect, 1)
+    
+    def create_hit_effect(self):
+        """Create a white flash effect when enemy is hit"""
+        flash_image = self.image.copy()
+        flash_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        flash_surface.fill((255, 255, 255, 100))  # White with alpha
+        flash_image.blit(flash_surface, (0, 0))
+        return flash_image

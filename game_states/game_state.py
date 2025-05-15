@@ -1,3 +1,4 @@
+from src.constants import FPS
 class GameState:
 
     def __init__(self, game):

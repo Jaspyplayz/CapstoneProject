@@ -15,6 +15,7 @@ class PausedState(GameState):
 
         self.options = ["Resume", "Options", "Quit to Menu", "Quit"]
         self.selected = 0
+        self.option_rects = []  # Store rectangles for mouse interaction
 
         # Use constants for fonts and colors
         try:
@@ -49,6 +50,25 @@ class PausedState(GameState):
                 elif event.key == pygame.K_ESCAPE:
                     self.resume_game()
                     self.game.assets.play_sound("back")
+            
+            # Handle mouse movement for hover effect
+            elif event.type == pygame.MOUSEMOTION:
+                mouse_pos = pygame.mouse.get_pos()
+                for i, rect in enumerate(self.option_rects):
+                    if rect.collidepoint(mouse_pos):
+                        if self.selected != i:
+                            self.selected = i
+                            self.game.assets.play_sound("hover")
+            
+            # Handle mouse clicks
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
+                mouse_pos = pygame.mouse.get_pos()
+                for i, rect in enumerate(self.option_rects):
+                    if rect.collidepoint(mouse_pos):
+                        self.selected = i
+                        self.select_option()
+                        self.game.assets.play_sound("select")
+                        break
 
     def select_option(self):
         if self.options[self.selected] == "Resume":
@@ -79,6 +99,9 @@ class PausedState(GameState):
         title_rect = title.get_rect(center=(screen.get_width() // 2, 100))
         screen.blit(title, title_rect)
 
+        # Reset option rects
+        self.option_rects = []
+        
         # Render menu options
         menu_y = MENU_START_Y
 
@@ -87,6 +110,9 @@ class PausedState(GameState):
             text = self.font.render(option, True, color)
             text_rect = text.get_rect(center=(screen.get_width() // 2, menu_y + i * MENU_SPACING))
             screen.blit(text, text_rect)
+            
+            # Store the rectangle for mouse detection (make hitbox slightly larger)
+            self.option_rects.append(text_rect.inflate(40, 20))
 
             # Selection indicator
             if i == self.selected:
@@ -96,7 +122,8 @@ class PausedState(GameState):
         instructions = [
             "↑↓: Navigate",
             "Enter: Select",
-            "Esc: Resume Game"
+            "Esc: Resume Game",
+            "Mouse: Click to select"
         ]
         
         instruction_y = screen.get_height() - 100
@@ -106,3 +133,7 @@ class PausedState(GameState):
             text_rect = text.get_rect(center=(screen.get_width() // 2, instruction_y))
             screen.blit(text, text_rect)
             instruction_y += 20
+            
+        # Debug: Uncomment to see clickable areas
+        # for rect in self.option_rects:
+        #     pygame.draw.rect(screen, (255, 0, 0), rect, 1)
