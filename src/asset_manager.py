@@ -264,7 +264,6 @@ class AssetManager:
                     pygame.mixer.music.play(loops)
             except:
                 print("Could not recover music playback")
-
     
     def stop_music(self):
         """Stop the currently playing music."""

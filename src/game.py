@@ -4,9 +4,10 @@ import os
 from characters.player import BasePlayer 
 from src.asset_manager import AssetManager
 from src.enemy_manager import EnemyManager  
+from src.camera import Camera
 from game_states import *
 from src.constants import (
-    GAME_TITLE, SCREEN_WIDTH, SCREEN_HEIGHT, FPS, STATE_MENU,
+    GAME_TITLE, MAP_WIDTH, MAP_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT, FPS, STATE_MENU,
     DEFAULT_MUSIC_VOLUME, DEFAULT_SFX_VOLUME
 )
 
@@ -27,7 +28,14 @@ class Game:
         pygame.display.set_caption(GAME_TITLE)
         self.clock = pygame.time.Clock()
         self.running = True
-        self.player = BasePlayer(400, 300)
+
+        # Initialize camera
+        self.camera = Camera(MAP_WIDTH, MAP_HEIGHT)
+
+        # Initialize player in the center of the map
+        player_x = MAP_WIDTH // 2
+        player_y = MAP_HEIGHT // 2
+        self.player = BasePlayer(player_x, player_y)
 
         self.assets = AssetManager()
         self.assets.preload_common_assets()
@@ -156,8 +164,14 @@ class Game:
         # Update the current game state with delta time
         self.state.update()
         
-        # If we're in gameplay state, check for projectile collisions
+        # If we're in gameplay state, update camera and check for collisions
         if isinstance(self.state, PlayState):
+            # Update camera to follow player
+            self.camera.update(
+                self.player.x + self.player.width // 2,
+                self.player.y + self.player.height // 2,
+                SCREEN_WIDTH, SCREEN_HEIGHT
+            )
             self.check_projectile_collisions()
 
     def check_projectile_collisions(self):
@@ -170,8 +184,20 @@ class Game:
             if not projectile.active:
                 continue
                 
+            # Create a larger collision rect for more forgiving hit detection
+            extended_rect = pygame.Rect(
+                projectile.rect.x - 15,  # More generous collision area
+                projectile.rect.y - 15,  # More generous collision area
+                projectile.rect.width + 30,  # Expanded collision area
+                projectile.rect.height + 30  # Expanded collision area
+            )
+            
             for enemy in self.enemy_manager.enemies:
-                if enemy.alive and projectile.rect.colliderect(enemy.rect):
+                if not enemy.alive:
+                    continue
+                    
+                # Check for collision with the extended projectile rect
+                if enemy.rect.colliderect(extended_rect):
                     # Projectile hit an enemy
                     enemy_killed = enemy.take_damage(projectile.damage)
                     projectile.active = False  # Deactivate the projectile
@@ -200,7 +226,10 @@ class Game:
 
     def reset_game(self):
         """Reset the game to its initial state."""
-        self.player = BasePlayer(400, 300)
+        # Reset player position to center of map
+        player_x = MAP_WIDTH // 2
+        player_y = MAP_HEIGHT // 2
+        self.player = BasePlayer(player_x, player_y)
         self.score = 0
         
         # Reset enemy manager

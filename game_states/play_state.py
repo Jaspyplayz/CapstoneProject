@@ -1,6 +1,6 @@
 from game_states.game_state import GameState
 import pygame
-from src.constants import STATE_GAME_OVER
+from src.constants import STATE_GAME_OVER, SCREEN_WIDTH, SCREEN_HEIGHT, MAP_WIDTH, MAP_HEIGHT
 from src.enemy_manager import EnemyManager  # Import the EnemyManager class
 
 class PlayState(GameState):
@@ -23,6 +23,15 @@ class PlayState(GameState):
         # Game state variables
         self.score = self.game.score
         
+        # Optional: Draw a grid to visualize the map
+        self.draw_grid = True
+        
+        # Movement indicator
+        self.movement_indicator_active = False
+        self.movement_indicator_pos = (0, 0)
+        self.movement_indicator_timer = 0
+        self.movement_indicator_max_time = 60  # 1 second at 60 FPS
+        
     def handle_events(self, events):
         for event in events:
             # Point and click right click movement
@@ -31,7 +40,7 @@ class PlayState(GameState):
                     self._handle_movement()
                 
 
-            elif event.type == pygame.KEYDOWN:
+            if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.game.change_state("pause", previous_state=self)
                 if event.key == pygame.K_d:
@@ -39,25 +48,50 @@ class PlayState(GameState):
                 if event.key == pygame.K_q:
                     # Left click for projectile attack
                     self._handle_attack()
+                if event.key == pygame.K_g:
+                    # Toggle grid display
+                    self.draw_grid = not self.draw_grid
                       
     def _handle_movement(self):
+        # Get mouse position in screen coordinates
         mouse_x, mouse_y = pygame.mouse.get_pos()
-        self.player.set_destination(mouse_x, mouse_y)
+        
+        # Convert to world coordinates
+        world_x = mouse_x + self.game.camera.x
+        world_y = mouse_y + self.game.camera.y
+        
+        # Set destination in world coordinates
+        self.player.set_destination(world_x, world_y)
+        
+        # Set movement indicator
+        self.movement_indicator_active = True
+        self.movement_indicator_pos = (world_x, world_y)
+        self.movement_indicator_timer = self.movement_indicator_max_time
     
     def _handle_flash(self):
+        # Get mouse position in screen coordinates
         mouse_x, mouse_y = pygame.mouse.get_pos()
-        flash_success = self.player.flash(mouse_x, mouse_y)
+        
+        # Convert to world coordinates
+        world_x = mouse_x + self.game.camera.x
+        world_y = mouse_y + self.game.camera.y
+        
+        flash_success = self.player.flash(world_x, world_y)
         if flash_success:
             # Play flash sound effect if you have one
             # self.game.assets.play_sound("flash")
             pass
     
     def _handle_attack(self):
-        # Get mouse position for attack direction
+        # Get mouse position in screen coordinates
         mouse_x, mouse_y = pygame.mouse.get_pos()
         
+        # Convert to world coordinates
+        world_x = mouse_x + self.game.camera.x
+        world_y = mouse_y + self.game.camera.y
+        
         # Try to fire a projectile
-        attack_success = self.player.attack(mouse_x, mouse_y)
+        attack_success = self.player.attack(world_x, world_y)
         
         # Play sound if attack was successful (not on cooldown)
         if attack_success:
@@ -110,11 +144,28 @@ class PlayState(GameState):
         # Update player
         self.player.update()
         
+        # Keep player within map bounds
+        self.player.x = max(0, min(self.player.x, MAP_WIDTH - self.player.width))
+        self.player.y = max(0, min(self.player.y, MAP_HEIGHT - self.player.height))
+        
+        # Update camera to follow player
+        self.game.camera.update(
+            self.player.x + self.player.width // 2,
+            self.player.y + self.player.height // 2,
+            SCREEN_WIDTH, SCREEN_HEIGHT
+        )
+        
         # Update all enemies
         self.enemy_manager.update()
         
         # Check for collisions
         self.check_collisions()
+        
+        # Update movement indicator
+        if self.movement_indicator_timer > 0:
+            self.movement_indicator_timer -= 1
+        else:
+            self.movement_indicator_active = False
 
         if self.player.health <= 0:
             # Make sure the game score is up to date before changing state
@@ -123,16 +174,109 @@ class PlayState(GameState):
 
     def render(self, screen):
         # Clear screen
-        screen.fill((0, 0, 0))
+        screen.fill((20, 20, 20))  # Dark background
         
-        # Draw player
-        self.player.draw(screen)
+        # Draw grid if enabled
+        if self.draw_grid:
+            self._draw_grid(screen)
         
-        # Draw all enemies
-        self.enemy_manager.draw(screen)
+        # Draw movement indicator if active
+        if self.movement_indicator_active:
+            # Get screen position for the indicator
+            indicator_screen_x = self.movement_indicator_pos[0] - self.game.camera.x
+            indicator_screen_y = self.movement_indicator_pos[1] - self.game.camera.y
+            
+            # Calculate size and opacity based on remaining time
+            size_factor = 1.0 + 0.5 * (self.movement_indicator_timer / self.movement_indicator_max_time)
+            opacity = int(200 * (self.movement_indicator_timer / self.movement_indicator_max_time))
+            
+            # Create a surface with per-pixel alpha
+            indicator_size = int(30 * size_factor)
+            indicator_surface = pygame.Surface((indicator_size, indicator_size), pygame.SRCALPHA)
+            
+            # Draw outer circle
+            pygame.draw.circle(
+                indicator_surface,
+                (0, 255, 0, opacity),  # Green with fading opacity
+                (indicator_size // 2, indicator_size // 2),
+                indicator_size // 2,
+                3  # Line width
+            )
+            
+            # Draw X mark inside
+            line_width = 2
+            margin = indicator_size // 4
+            pygame.draw.line(
+                indicator_surface,
+                (0, 255, 0, opacity),
+                (margin, margin),
+                (indicator_size - margin, indicator_size - margin),
+                line_width
+            )
+            pygame.draw.line(
+                indicator_surface,
+                (0, 255, 0, opacity),
+                (margin, indicator_size - margin),
+                (indicator_size - margin, margin),
+                line_width
+            )
+            
+            # Draw the indicator
+            screen.blit(
+                indicator_surface,
+                (indicator_screen_x - indicator_size // 2, indicator_screen_y - indicator_size // 2)
+            )
         
-        # Draw UI elements like score, health bar, etc.
+        # Draw enemies with camera offset
+        for enemy in self.enemy_manager.enemies:
+            if enemy.alive:
+                # Get camera-adjusted position
+                camera_pos = self.game.camera.apply(enemy)
+                # Only draw if on screen (with some margin)
+                if (-100 <= camera_pos[0] <= SCREEN_WIDTH + 100 and 
+                    -100 <= camera_pos[1] <= SCREEN_HEIGHT + 100):
+                    # Use the enemy's draw_with_camera method instead of directly blitting
+                    enemy.draw_with_camera(screen, camera_pos)
+        
+        # Draw player with camera offset
+        player_pos = self.game.camera.apply(self.player)
+        screen.blit(self.player.image, player_pos)
+        
+        # Draw projectiles with camera offset
+        for projectile in self.player.get_active_projectiles():
+            if projectile.active:
+                # Get camera-adjusted rect
+                proj_rect = self.game.camera.apply_rect(projectile.rect)
+                pygame.draw.rect(screen, projectile.color, proj_rect)
+        
+        # Draw UI elements (these are in screen coordinates, not world coordinates)
         self._draw_ui(screen)
+
+    
+    def _draw_grid(self, screen):
+        # Draw a grid to visualize the map
+        grid_color = (50, 50, 50)  # Dark gray
+        grid_spacing = 200  # Space between grid lines
+        
+        # Vertical lines
+        for x in range(0, MAP_WIDTH, grid_spacing):
+            if 0 <= x - self.game.camera.x <= SCREEN_WIDTH:
+                pygame.draw.line(screen, grid_color, 
+                                (x - self.game.camera.x, 0), 
+                                (x - self.game.camera.x, SCREEN_HEIGHT))
+        
+        # Horizontal lines
+        for y in range(0, MAP_HEIGHT, grid_spacing):
+            if 0 <= y - self.game.camera.y <= SCREEN_HEIGHT:
+                pygame.draw.line(screen, grid_color, 
+                                (0, y - self.game.camera.y), 
+                                (SCREEN_WIDTH, y - self.game.camera.y))
+                                
+        # Draw map boundaries
+        boundary_color = (100, 100, 255)  # Light blue
+        pygame.draw.rect(screen, boundary_color, 
+                        pygame.Rect(-self.game.camera.x, -self.game.camera.y, 
+                                   MAP_WIDTH, MAP_HEIGHT), 2)
     
     def _draw_ui(self, screen):
         # Example of drawing score
@@ -150,3 +294,8 @@ class PlayState(GameState):
             cooldown_ratio = 1 - (self.player.attack_cooldown / self.player.attack_cooldown_max)
             pygame.draw.rect(screen, (100, 100, 100), (10, 80, 200, 10))
             pygame.draw.rect(screen, (200, 200, 0), (10, 80, 200 * cooldown_ratio, 10))
+            
+        # Display current position and map size
+        pos_text = font.render(f"Pos: ({int(self.player.x)}, {int(self.player.y)}) | Map: {MAP_WIDTH}x{MAP_HEIGHT}", 
+                              True, (200, 200, 200))
+        screen.blit(pos_text, (10, SCREEN_HEIGHT - 40))

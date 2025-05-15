@@ -1,6 +1,7 @@
+# Projectile.py
 import pygame
 import math
-from src.constants import RED, GREEN, FLASH_COOLDOWN, SCREEN_WIDTH, SCREEN_HEIGHT
+from src.constants import RED, GREEN, MAP_WIDTH, MAP_HEIGHT, FLASH_COOLDOWN
 
 class Projectile:
     def __init__(self, x, y, target_x, target_y, speed=10, damage=25, range=400):
@@ -21,29 +22,39 @@ class Projectile:
         distance = max(1, math.hypot(dx, dy))  # Avoid division by zero
         self.velocity_x = (dx / distance) * speed
         self.velocity_y = (dy / distance) * speed
+        
+        # Store previous position for continuous collision detection
+        self.prev_x = self.x
+        self.prev_y = self.y
+        
+        # Create proper rect for collision detection
+        self.rect = pygame.Rect(int(self.x), int(self.y), self.width, self.height)
     
     def update(self):
         if not self.active:
             return
             
+        # Store previous position for continuous collision detection
+        self.prev_x = self.x
+        self.prev_y = self.y
+        
         # Move projectile
-        prev_x, prev_y = self.x, self.y
         self.x += self.velocity_x
         self.y += self.velocity_y
         
+        # Update rect position
+        self.rect.x = int(self.x)
+        self.rect.y = int(self.y)
+        
         # Calculate distance traveled this frame
-        frame_distance = math.hypot(self.x - prev_x, self.y - prev_y)
+        frame_distance = math.hypot(self.velocity_x, self.velocity_y)
         self.distance_traveled += frame_distance
         
-        # Check if projectile is out of range or out of bounds
+        # Check if projectile is out of range or out of map bounds
         if (self.distance_traveled >= self.range or 
-            self.x < 0 or self.x > SCREEN_WIDTH or 
-            self.y < 0 or self.y > SCREEN_HEIGHT):
+            self.x < 0 or self.x > MAP_WIDTH or 
+            self.y < 0 or self.y > MAP_HEIGHT):
             self.active = False
-    
-    @property
-    def rect(self):
-        return pygame.Rect(self.x, self.y, self.width, self.height)
     
     def draw(self, screen):
         if not self.active:
@@ -58,6 +69,31 @@ class Projectile:
             pygame.draw.line(screen, (0, 100, 200), 
                            (self.x + self.width/2, self.y + self.height/2),
                            (trail_x + self.width/2, trail_y + self.height/2), 3)
+    
+    def draw_with_camera(self, surface, camera_pos):
+        """Draw the projectile with camera offset"""
+        if not self.active:
+            return
+        
+        # Draw projectile at camera-adjusted position
+        camera_rect = pygame.Rect(camera_pos[0], camera_pos[1], self.width, self.height)
+        pygame.draw.rect(surface, self.color, camera_rect)
+        
+        # Draw trail with camera offset
+        trail_length = min(30, int(self.distance_traveled))
+        if trail_length > 0:
+            # Calculate trail position in world coordinates
+            trail_x = self.x - self.velocity_x * (trail_length / self.speed)
+            trail_y = self.y - self.velocity_y * (trail_length / self.speed)
+            
+            # Convert to camera coordinates
+            trail_camera_x = camera_pos[0] + (trail_x - self.x)
+            trail_camera_y = camera_pos[1] + (trail_y - self.y)
+            
+            # Draw the trail line
+            pygame.draw.line(surface, (0, 100, 200), 
+                           (camera_pos[0] + self.width/2, camera_pos[1] + self.height/2),
+                           (trail_camera_x + self.width/2, trail_camera_y + self.height/2), 3)
 
 class BasePlayer:
     def __init__(self, x, y):
@@ -68,6 +104,9 @@ class BasePlayer:
         self.color = RED
         self.speed = 5
         self.flash_range = 200  
+
+        self.image = pygame.Surface((self.width, self.height))
+        self.image.fill(self.color)
 
         # Movement system
         self.target_x = None 
@@ -89,7 +128,7 @@ class BasePlayer:
         self.projectiles = []  # List to store active projectiles
 
     def set_destination(self, x, y):
-        """Improved with boundary checking"""
+        """Set destination in world coordinates"""
         self.target_x = x
         self.target_y = y
         self.moving = True
@@ -134,7 +173,7 @@ class BasePlayer:
                 new_y = self.constrain_position_y(new_y)
                 
                 # If we hit a boundary, stop moving
-                if new_x == 0 or new_x == SCREEN_WIDTH - self.width or new_y == 0 or new_y == SCREEN_HEIGHT - self.height:
+                if new_x == 0 or new_x == MAP_WIDTH - self.width or new_y == 0 or new_y == MAP_HEIGHT - self.height:
                     self.moving = False
                     self.target_x = None
                     self.target_y = None
@@ -149,12 +188,12 @@ class BasePlayer:
                 self.projectiles.remove(projectile)
 
     def constrain_position_x(self, x):
-        """Keep x position within screen bounds"""
-        return max(0, min(SCREEN_WIDTH - self.width, x))
+        """Keep x position within map bounds"""
+        return max(0, min(MAP_WIDTH - self.width, x))
     
     def constrain_position_y(self, y):
-        """Keep y position within screen bounds"""
-        return max(0, min(SCREEN_HEIGHT - self.height, y))
+        """Keep y position within map bounds"""
+        return max(0, min(MAP_HEIGHT - self.height, y))
 
     def flash(self, mouse_x, mouse_y):
         """Flash toward mouse position, limited by maximum range"""
@@ -197,7 +236,6 @@ class BasePlayer:
         # Activate cooldown
         self.flash_cooldown = self.flash_cooldown_max
         return True
-
     
     def take_damage(self, amount):
         """Handle player taking damage"""
@@ -238,27 +276,7 @@ class BasePlayer:
         
     def knockback(self, source_x, source_y):
         """Push player away from damage source with boundary checking"""
-        # Calculate direction vector from source to player
-        """
-        dx = (self.x + self.width/2) - source_x
-        dy = (self.y + self.height/2) - source_y
-        
-        # Normalize and apply knockback
-        distance = max(1, math.hypot(dx, dy))  # Avoid division by zero
-        knockback_strength = 0
-        
-        new_x = self.x + (dx / distance) * knockback_strength
-        new_y = self.y + (dy / distance) * knockback_strength
-        
-        # Apply boundary constraints
-        self.x = self.constrain_position_x(new_x)
-        self.y = self.constrain_position_y(new_y)
-        
-        # Reset movement target when knocked back
-        self.moving = False
-        self.target_x = None
-        self.target_y = None
-        """
+        # Knockback functionality is commented out in the original code
         pass
 
     @property
@@ -288,3 +306,36 @@ class BasePlayer:
         # Draw all projectiles
         for projectile in self.projectiles:
             projectile.draw(screen)
+            
+    def draw_with_camera(self, surface, camera_rect):
+        """Draw player with camera offset"""
+        # Draw player rectangle at camera position
+        pygame.draw.rect(surface, self.color, camera_rect)
+
+        # Draw movement path if active
+        if self.moving and self.target_x is not None and self.target_y is not None:
+            # Convert world coordinates to screen coordinates
+            start_pos = (camera_rect.x + self.width/2, camera_rect.y + self.height/2)
+            
+            # Calculate target position on screen
+            target_screen_x = camera_rect.x + (self.target_x - self.x)
+            target_screen_y = camera_rect.y + (self.target_y - self.y)
+            
+            pygame.draw.line(surface, GREEN, start_pos, 
+                           (target_screen_x, target_screen_y), 2)
+
+        # Visualize flash cooldown with camera offset
+        if self.flash_cooldown > 0:
+            cooldown_ratio = 1 - (self.flash_cooldown / self.flash_cooldown_max)
+            radius = int(25 * cooldown_ratio)
+            center = (int(camera_rect.x + self.width/2), int(camera_rect.y + self.height/2))
+            pygame.draw.circle(surface, (200, 200, 200, 150), center, radius, 2)
+            
+        # Draw all projectiles with camera offset
+        for projectile in self.projectiles:
+            if projectile.active:
+                # Calculate projectile's position relative to the camera
+                proj_camera_x = camera_rect.x + (projectile.x - self.x)
+                proj_camera_y = camera_rect.y + (projectile.y - self.y)
+                projectile.draw_with_camera(surface, (proj_camera_x, proj_camera_y))
+

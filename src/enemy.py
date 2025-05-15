@@ -1,38 +1,40 @@
+# Enemy.py
 import pygame
 import random
 import math
-from src.constants import SCREEN_WIDTH, SCREEN_HEIGHT, RED, GREEN
+from src.constants import MAP_WIDTH, MAP_HEIGHT, RED, GREEN
 
 class Enemy:
     def __init__(self, game, speed, health, x=None, y=None):
         self.game = game
 
-        # Enemy coordinate spawnpoint 
-        self.x = x if x is not None else random.randint(0, SCREEN_WIDTH - 50)
-        self.y = y if y is not None else random.randint(0, SCREEN_HEIGHT - 50)
-
         # Enemy properties
-        self.width = 40
-        self.height = 40
         self.speed = speed
         self.health = health
         self.max_health = health
-        self.detection_radius = 250  # How far the enemy can detect the player
-        self.score_value = 100  # Points awarded when killed
+        self.detection_radius = 250
+        self.score_value = 100
 
-        # Load enemies image
+        # Load enemy image first so we can set width/height based on it
         self.image = self.game.assets.load_image("enemy", "enemies/basic_enemy.jpg")
         
-        # Create a more accurate hitbox (slightly smaller than the visual sprite)
-        hitbox_reduction = 4  # pixels on each side
+        # Set width and height based on the actual image dimensions
+        self.width = self.image.get_width()
+        self.height = self.image.get_height()
+
+        # Enemy coordinate spawnpoint - now using MAP dimensions instead of SCREEN dimensions
+        self.x = x if x is not None else random.randint(0, MAP_WIDTH - self.width)
+        self.y = y if y is not None else random.randint(0, MAP_HEIGHT - self.height)
+        
+        # Create hitbox that matches the visual sprite exactly
         self.rect = pygame.Rect(
-            self.x + hitbox_reduction,
-            self.y + hitbox_reduction,
-            self.width - (hitbox_reduction * 2),
-            self.height - (hitbox_reduction * 2)
+            int(self.x),
+            int(self.y),
+            self.width,
+            self.height
         )
         
-        # Create a mask for pixel-perfect collision if needed
+        # Create a mask for pixel-perfect collision
         self.mask = pygame.mask.from_surface(self.image)
 
         # Movement vectors
@@ -51,6 +53,7 @@ class Enemy:
 
         # State
         self.alive = True
+        self.debug_mode = False
         
         # Hit effect
         self.hit_flash = 0
@@ -61,7 +64,6 @@ class Enemy:
         self.velocity_y = math.sin(self.angle) * self.speed
 
     def update(self):
-        # If enemy is not alive then return and don't update
         if not self.alive:
             return 
         
@@ -79,7 +81,6 @@ class Enemy:
         
         # If player is close, seek them
         if distance_to_player < self.detection_radius:
-            # Increase aggression as enemy gets closer to player
             aggression = 0.3 + (1 - distance_to_player / self.detection_radius) * 0.4
             self.seek_player(player_x, player_y, aggression)
         else:
@@ -93,25 +94,28 @@ class Enemy:
         self.x += self.velocity_x
         self.y += self.velocity_y
 
-        # Boundary handling
+        # Boundary handling - now using MAP dimensions
         if self.x < 0:
             self.x = 0
             self.bounce_horizontal()
-        elif self.x > SCREEN_WIDTH - self.width:
-            self.x = SCREEN_WIDTH - self.width
+        elif self.x > MAP_WIDTH - self.width:
+            self.x = MAP_WIDTH - self.width
             self.bounce_horizontal()
 
         if self.y < 0:
             self.y = 0
             self.bounce_vertical()
-        elif self.y > SCREEN_HEIGHT - self.height:
-            self.y = SCREEN_HEIGHT - self.height
+        elif self.y > MAP_HEIGHT - self.height:
+            self.y = MAP_HEIGHT - self.height
             self.bounce_vertical()
 
-        # Update rect position - with the hitbox offset
-        hitbox_reduction = 4
-        self.rect.x = int(self.x) + hitbox_reduction
-        self.rect.y = int(self.y) + hitbox_reduction
+        # Update hitbox position
+        self.update_hitbox()
+
+    def update_hitbox(self):
+        """Update the hitbox position based on the enemy's position"""
+        self.rect.x = int(self.x)
+        self.rect.y = int(self.y)
 
     def bounce_horizontal(self):
         self.angle = math.pi - self.angle
@@ -147,7 +151,7 @@ class Enemy:
             return False
         
         self.health -= amount
-        self.hit_flash = self.hit_flash_duration  # Activate hit flash effect
+        self.hit_flash = self.hit_flash_duration
         
         # Play hit sound
         if hasattr(self.game, 'assets'):
@@ -155,8 +159,8 @@ class Enemy:
 
         if self.health <= 0:
             self.die()
-            return True  # Enemy died
-        return False  # Enemy still alive
+            return True
+        return False
 
     def die(self):
         """Handle enemy death"""
@@ -165,8 +169,6 @@ class Enemy:
         # Play death sound
         if hasattr(self.game, 'assets'):
             self.game.assets.play_sound(self.death_sound)
-        
-        # No need to add score here, it's handled in the PlayState
 
     def draw(self, surface):
         if not self.alive:
@@ -175,28 +177,67 @@ class Enemy:
         # Create a copy of the image for hit flash effect
         current_image = self.image.copy() if self.hit_flash == 0 else self.create_hit_effect()
         
-        # Draw enemy
-        surface.blit(current_image, (self.x, self.y))
+        # Draw enemy - this method is used when not using camera
+        surface.blit(current_image, (int(self.x), int(self.y)))
 
         # Draw health bar
-        health_bar_width = self.width - 10  # Make it almost as wide as the enemy
+        health_bar_width = self.width - 10
         health_ratio = max(0, self.health / self.max_health)
 
         # Health bar background
         pygame.draw.rect(surface, RED, 
-                         (self.x + 5, self.y - 10, health_bar_width, 5))
+                        (int(self.x) + 5, int(self.y) - 10, health_bar_width, 5))
         
         # Health bar foreground
         pygame.draw.rect(surface, GREEN, 
-                         (self.x + 5, self.y - 10, health_bar_width * health_ratio, 5))
+                        (int(self.x) + 5, int(self.y) - 10, int(health_bar_width * health_ratio), 5))
         
-        # Debug: Draw hitbox (uncomment for debugging)
-        # pygame.draw.rect(surface, (255, 0, 255), self.rect, 1)
+        # Debug: Draw hitbox if debug mode is enabled
+        if self.debug_mode:
+            pygame.draw.rect(surface, (255, 0, 255), self.rect, 1)
+    
+    def draw_with_camera(self, surface, camera_pos):
+        """Draw the enemy with camera offset"""
+        if not self.alive:
+            return
+        
+        # Create a copy of the image for hit flash effect
+        current_image = self.image.copy() if self.hit_flash == 0 else self.create_hit_effect()
+        
+        # Draw enemy at camera position
+        surface.blit(current_image, camera_pos)
+
+        # Draw health bar with camera offset
+        health_bar_width = self.width - 10
+        health_ratio = max(0, self.health / self.max_health)
+
+        # Health bar background
+        pygame.draw.rect(surface, RED, 
+                        (camera_pos[0] + 5, camera_pos[1] - 10, health_bar_width, 5))
+        
+        # Health bar foreground
+        pygame.draw.rect(surface, GREEN, 
+                        (camera_pos[0] + 5, camera_pos[1] - 10, int(health_bar_width * health_ratio), 5))
+        
+        # Debug: Draw hitbox if debug mode is enabled
+        if self.debug_mode:
+            # Create a new rect at the camera position with same dimensions
+            debug_rect = pygame.Rect(camera_pos[0], camera_pos[1], self.rect.width, self.rect.height)
+            pygame.draw.rect(surface, (255, 0, 255), debug_rect, 1)
     
     def create_hit_effect(self):
         """Create a white flash effect when enemy is hit"""
-        flash_image = self.image.copy()
-        flash_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        flash_surface.fill((255, 255, 255, 100))  # White with alpha
-        flash_image.blit(flash_surface, (0, 0))
+        # Create a surface the same size as the enemy
+        flash_image = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        
+        # First draw the original enemy image
+        flash_image.blit(self.image, (0, 0))
+        
+        # Create a white overlay with transparency
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((255, 255, 255, 150))  # White with alpha (0-255)
+        
+        # Apply the overlay to our new surface
+        flash_image.blit(overlay, (0, 0))
+        
         return flash_image
