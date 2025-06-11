@@ -1,11 +1,13 @@
 import pygame 
 import json
 import os
-from characters.player import BasePlayer 
+from src.characters.characters.player import BasePlayer  # Import your champion classes
+from src.characters.characters.ezreal import Ezreal
+from src.characters.characters.ashe import Ashe
 from src.asset_manager import AssetManager
 from src.enemy_manager import EnemyManager  
 from src.camera import Camera
-from game_states import *
+from src.game_states import *
 from src.constants import (
     GAME_TITLE, MAP_WIDTH, MAP_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT, FPS, STATE_MENU,
     DEFAULT_MUSIC_VOLUME, DEFAULT_SFX_VOLUME
@@ -32,13 +34,19 @@ class Game:
         # Initialize camera
         self.camera = Camera(MAP_WIDTH, MAP_HEIGHT)
 
-        # Initialize player in the center of the map
+        # Character selection - default to "base"
+        self.selected_character = self.settings.get("selected_character", "base")
+        
+        # Initialize player in the center of the map with selected character
         player_x = MAP_WIDTH // 2
         player_y = MAP_HEIGHT // 2
-        self.player = BasePlayer(player_x, player_y)
+        self.create_player(player_x, player_y)
 
         self.assets = AssetManager()
         self.assets.preload_common_assets()
+        
+        # Load character assets
+        self.load_character_assets()
         
         # Load projectile assets
         self.load_projectile_assets()
@@ -59,6 +67,44 @@ class Game:
         self.load_enemy_assets()
         
         self.state = StateFactory.create_state(STATE_MENU, self)
+
+    def create_player(self, x, y):
+        """Create a player based on the selected character"""
+        if self.selected_character == "ezreal":
+            self.player = Ezreal(x, y)
+        elif self.selected_character == "ashe":
+            self.player = Ashe(x, y)
+        else:  # Default to base player
+            self.player = BasePlayer(x, y)
+    
+    def set_character(self, character_id):
+        """Set the selected character and save to settings"""
+        self.selected_character = character_id
+        self.settings["selected_character"] = character_id
+        self.save_settings()
+        
+        # Update player with new character
+        player_x = self.player.x if hasattr(self, 'player') else MAP_WIDTH // 2
+        player_y = self.player.y if hasattr(self, 'player') else MAP_HEIGHT // 2
+        self.create_player(player_x, player_y)
+
+    def load_character_assets(self):
+        """Load assets for different characters"""
+        # Load base character assets
+        self.assets.load_image("base_player", "characters/base_player.png")
+        self.assets.load_image("base_portrait", "characters/base_portrait.png")
+        
+        # Load Ezreal assets
+        self.assets.load_image("ezreal", "characters/ezreal.png")
+        self.assets.load_image("ezreal_portrait", "characters/ezreal_portrait.png")
+        self.assets.load_image("ezreal_q", "projectiles/ezreal_q.png")
+        self.assets.load_sound("ezreal_q_sound", "characters/ezreal_q.wav")
+        
+        # Load Ashe assets
+        self.assets.load_image("ashe", "characters/ashe.png")
+        self.assets.load_image("ashe_portrait", "characters/ashe_portrait.png")
+        self.assets.load_image("ashe_q", "projectiles/ashe_q.png")
+        self.assets.load_sound("ashe_q_sound", "characters/ashe_q.wav")
 
     def load_projectile_assets(self):
         """Load projectile-related assets"""
@@ -99,7 +145,8 @@ class Game:
                 self.settings = {
                     "music_volume": DEFAULT_MUSIC_VOLUME * 100,  # Convert to percentage
                     "sfx_volume": DEFAULT_SFX_VOLUME * 100,      # Convert to percentage
-                    "fullscreen": False
+                    "fullscreen": False,
+                    "selected_character": "base"  # Default character
                 }
                 # Create the settings file
                 self.save_settings()
@@ -109,7 +156,8 @@ class Game:
             self.settings = {
                 "music_volume": DEFAULT_MUSIC_VOLUME * 100,
                 "sfx_volume": DEFAULT_SFX_VOLUME * 100,
-                "fullscreen": False
+                "fullscreen": False,
+                "selected_character": "base"  # Default character
             }
             
     def save_settings(self):
@@ -229,7 +277,7 @@ class Game:
         # Reset player position to center of map
         player_x = MAP_WIDTH // 2
         player_y = MAP_HEIGHT // 2
-        self.player = BasePlayer(player_x, player_y)
+        self.create_player(player_x, player_y)  # Use create_player instead of direct assignment
         self.score = 0
         
         # Reset enemy manager

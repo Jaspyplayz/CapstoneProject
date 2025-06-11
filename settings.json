@@ -1,5 +1,6 @@
 {
     "music_volume": 50,
     "sfx_volume": 50,
-    "fullscreen": false
+    "fullscreen": false,
+    "selected_character": "ezreal"
 }

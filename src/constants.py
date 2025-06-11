@@ -43,6 +43,7 @@ STATE_OPTIONS = "options"
 STATE_CREDITS = "credits"
 STATE_GAME_OVER = "game_over"
 STATE_PAUSE = "pause"
+STATE_CHAMPION_SELECT = "champion_select"
 
 # Asset paths
 ASSET_DIR = "assets"
@@ -51,7 +52,7 @@ SOUND_DIR = f"{ASSET_DIR}/sounds"
 FONT_DIR = f"{ASSET_DIR}/fonts"
 
 # Font settings
-DEFAULT_FONT = "main_font.ttf"
+DEFAULT_FONT = "assets/fonts/main_font.ttf"
 TITLE_FONT_SIZE = 64
 HEADING_FONT_SIZE = 48
 NORMAL_FONT_SIZE = 32
