@@ -1,0 +1,141 @@
+Prompt 1: How should I balance different enemy types in my wave-based game?
+For balancing different enemy types in your wave-based game:
+
+Define clear roles for each enemy type:
+
+Basic enemies: Well-rounded, predictable behavior
+Fast enemies: Quick but fragile, surprise attacks
+Tank enemies: Slow but durable, area denial
+Boss enemies: Complex attack patterns, significant threat
+Progressive difficulty scaling:
+
+Start with simple enemies in early waves
+Gradually introduce more complex types
+Increase enemy stats by 10-15% per wave
+Add special mechanics at milestone waves (5, 10, 15)
+Dynamic spawn weights:
+
+Adjust enemy type probabilities based on current wave
+Create tension cycles with easier and harder sections
+Ensure boss waves feel significant but not impossible
+Playtest extensively:
+
+Track player survival rates per wave
+Aim for gradually decreasing survival probability
+Ensure death feels fair and preventable
+
+Prompt 1: How can I implement enemy projectiles in my pygame game?
+To implement enemy projectiles in your pygame game:
+
+Create a Projectile class:
+
+Copy
+class Projectile:
+    def __init__(self, x, y, target_x, target_y, speed, damage, color, max_range):
+        self.x = x
+        self.y = y
+        self.speed = speed
+        self.damage = damage
+        self.color = color
+        self.active = True
+        self.distance_traveled = 0
+        self.max_range = max_range
+        
+        # Calculate direction vector
+        dx = target_x - x
+        dy = target_y - y
+        distance = max(0.1, math.sqrt(dx*dx + dy*dy))
+        self.vx = (dx / distance) * speed
+        self.vy = (dy / distance) * speed
+        
+        # Create rect for collision detection
+        self.radius = 5
+        self.rect = pygame.Rect(int(x-self.radius), int(y-self.radius), 
+                               self.radius*2, self.radius*2)
+Update Enemy class to fire projectiles:
+
+Copy
+def update(self):
+    # Existing movement code...
+    
+    # Handle projectile firing
+    self.attack_cooldown -= 1
+    if self.attack_cooldown <= 0 and self.distance_to_player < self.attack_range:
+        self.fire_projectile()
+        self.attack_cooldown = self.attack_cooldown_max
+Add projectile rendering and collision detection in your game loop
+
+Prompt 3: How can I implement a camera system for my 2D game?
+To implement a camera system for your 2D game:
+
+Copy
+class Camera:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self.x = 0
+        self.y = 0
+        
+    def apply(self, entity):
+        """Returns the entity's screen position after applying camera offset"""
+        return (entity.x - self.x, entity.y - self.y)
+        
+    def update(self, target):
+        """Center the camera on the target entity with smooth movement"""
+        # Calculate desired camera position (centered on target)
+        desired_x = target.x - self.width // 2
+        desired_y = target.y - self.height // 2
+        
+        # Smooth camera movement (lerp)
+        self.x += (desired_x - self.x) * 0.05
+        self.y += (desired_y - self.y) * 0.05
+        
+        # Optional: Add camera bounds to prevent showing outside the map
+        self.x = max(0, min(self.x, MAP_WIDTH - self.width))
+        self.y = max(0, min(self.y, MAP_HEIGHT - self.height))
+Use this camera by updating it each frame and applying it when drawing entities.
+
+Prompt 4: How should I implement the wave system in my game?
+For implementing a wave system in your game:
+
+Copy
+class WaveManager:
+    def __init__(self):
+        self.current_wave = 1
+        self.wave_timer = 0
+        self.wave_duration = 1800  # 30 seconds at 60 FPS
+        self.wave_cooldown = 300   # 5 seconds between waves
+        self.in_wave_cooldown = False
+        self.enemies_killed_this_wave = 0
+        self.boss_waves = [5, 10, 15, 20]
+        
+    def update(self):
+        if self.in_wave_cooldown:
+            # Between waves
+            self.wave_timer += 1
+            if self.wave_timer >= self.wave_cooldown:
+                # Start new wave
+                self.current_wave += 1
+                self.in_wave_cooldown = False
+                self.wave_timer = 0
+                self.enemies_killed_this_wave = 0
+                return "new_wave"
+        else:
+            # During wave
+            self.wave_timer += 1
+            if self.wave_timer >= self.wave_duration:
+                # End current wave
+                self.in_wave_cooldown = True
+                self.wave_timer = 0
+                return "wave_complete"
+        
+        return None
+        
+    def get_enemy_scaling(self):
+        """Return scaling factors based on current wave"""
+        return {
+            "health": 1 + (self.current_wave - 1) * 0.15,
+            "damage": 1 + (self.current_wave - 1) * 0.10,
+            "speed": 1 + (self.current_wave - 1) * 0.05
+        }
+Integrate this with your EnemyManager to spawn appropriate enemies for each wave.
