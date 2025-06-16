@@ -1,4 +1,3 @@
-# EnemyManager.py
 from src.constants import MAX_ENEMIES, SPAWN_DELAY, MAP_WIDTH, MAP_HEIGHT
 from src.enemy import Enemy
 import random
@@ -13,7 +12,6 @@ class EnemyManager:
         self.spawn_timer = 0
         self.spawn_delay = SPAWN_DELAY
         self.max_enemies = MAX_ENEMIES
-        self.debug_mode = False  # Toggle for showing hitboxes
         
         # Wave system
         self.current_wave = 1
@@ -23,92 +21,112 @@ class EnemyManager:
         self.in_wave_cooldown = False
         self.wave_start_time = time.time()
         
-        # Enemy variety
+        # Base enemy types - initial values for wave 1
         self.enemy_types = {
-            "basic": {
-                "speed": (1.0, 2.0),
-                "health": (80, 120),
-                "image": "enemies/basic_enemy.jpg",
-                "weight": 100  # Spawn weight (higher = more common)
-            },
-            "fast": {
-                "speed": (2.5, 3.5),
-                "health": (50, 80),
-                "image": "enemies/basic_enemy.jpg",  # Replace with actual fast enemy image
-                "weight": 0    # Start at 0, will increase with waves
-            },
-            "tank": {
-                "speed": (0.7, 1.2),
-                "health": (150, 200),
-                "image": "enemies/basic_enemy.jpg",  # Replace with actual tank enemy image
-                "weight": 0    # Start at 0, will increase with waves
-            },
-            "boss": {
-                "speed": (0.5, 0.8),
-                "health": (400, 600),
-                "image": "enemies/basic_enemy.jpg",  # Replace with actual boss enemy image
-                "weight": 0    # Special spawn conditions
-            }
+            "basic": {"color": (255, 0, 0), "speed": 1.5, "health": 100, "damage": 10},
+            "fast": {"color": (0, 255, 0), "speed": 2.5, "health": 70, "damage": 8},
+            "tank": {"color": (0, 0, 255), "speed": 0.8, "health": 180, "damage": 15}
         }
         
-        # Spawn patterns
-        self.spawn_patterns = [
-            "random",       # Random positions around the map
-            "surrounding",  # Surround the player
-            "directional",  # All from one direction
-            "corners"       # From map corners
-        ]
-        self.current_spawn_pattern = "random"
-        
-        # Special events
-        self.special_events = {
-            "horde": False,     # Many weak enemies
-            "elite": False,     # Few strong enemies
-            "boss_wave": False  # Boss with minions
+        # Scaling factors per wave
+        self.scaling = {
+            "health": 0.15,      # Health increases by 15% per wave
+            "damage": 0.10,      # Damage increases by 10% per wave
+            "speed": 0.05,       # Speed increases by 5% per wave
+            "spawn_rate": 0.08   # Spawn rate increases by 8% per wave
         }
         
-        # Statistics
-        self.enemies_spawned = 0
-        self.enemies_killed = 0
-        self.last_spawn_positions = []  # Track recent spawn positions
-        
-        # Initialize wave
-        self.update_wave_settings()
+        # Wave-specific changes
+        self.boss_waves = [5, 10, 15, 20]  # Waves that spawn boss enemies
 
     def update(self):
         # Update wave system
         self.update_wave()
         
-        # Create a list of enemies to remove after iteration
+        # Remove dead enemies
         enemies_to_remove = []
-        
         for enemy in self.enemies:
-            # Pass debug mode to enemy
-            enemy.debug_mode = self.debug_mode
             enemy.update()
-
-            # Keep enemy within map bounds
-            enemy.x = max(0, min(enemy.x, MAP_WIDTH - enemy.width))
-            enemy.y = max(0, min(enemy.y, MAP_HEIGHT - enemy.height))
-            
-            # Update enemy's rect position
-            enemy.rect.x = int(enemy.x)
-            enemy.rect.y = int(enemy.y)
-
             if not enemy.alive:
                 enemies_to_remove.append(enemy)
-                self.enemies_killed += 1
-        
-        # Remove dead enemies after iteration is complete
+                
         for enemy in enemies_to_remove:
-            self.enemies.remove(enemy)
-
+            if enemy in self.enemies:
+                self.enemies.remove(enemy)
+        
         # Handle enemy spawning
         if not self.in_wave_cooldown:
+            # Calculate spawn delay based on wave (gets faster as waves progress)
+            current_spawn_delay = max(15, self.spawn_delay * (1 - (self.current_wave - 1) * self.scaling["spawn_rate"]))
+            
             self.spawn_timer += 1
-            if self.spawn_timer >= self.spawn_delay and len(self.enemies) < self.max_enemies:
-                self.spawn_enemy()
-                self.spawn_timer = 0
+            if self.spawn_timer >= current_spawn_delay and len(self.enemies) < self.max_enemies:
+                # Select enemy type with weighted probability
+                enemy_type = self.select_enemy_type()
+                
+                # Get spawn position
+                spawn_pos = self.get_spawn_position()
+                if spawn_pos is not None:
+                    x, y = spawn_pos
+                    self.spawn_enemy(enemy_type, x, y)
+                    self.spawn_timer = 0
+        
+        # Check for projectile collisions with player
+        self.check_projectile_collisions()
+
+    def check_projectile_collisions(self):
+        """Check if any enemy projectiles hit the player"""
+        for enemy in self.enemies:
+            for projectile in enemy.projectiles[:]:
+                if projectile.active and projectile.rect.colliderect(self.game.player.rect):
+                    # Damage player
+                    self.game.player.take_damage(projectile.damage)
+                    
+                    # Deactivate projectile
+                    projectile.active = False
+
+    def select_enemy_type(self):
+        """Select enemy type with weighted probability based on current wave"""
+        # Basic weights
+        weights = {
+            "basic": 70,
+            "fast": 20,
+            "tank": 10
+        }
+        
+        # Adjust weights based on wave
+        if self.current_wave >= 3:
+            weights["basic"] = 60
+            weights["fast"] = 25
+            weights["tank"] = 15
+            
+        if self.current_wave >= 7:
+            weights["basic"] = 50
+            weights["fast"] = 30
+            weights["tank"] = 20
+            
+        if self.current_wave >= 10:
+            weights["basic"] = 40
+            weights["fast"] = 35
+            weights["tank"] = 25
+            
+        # Special case for boss waves
+        if self.current_wave in self.boss_waves:
+            # Increase chance of tanks on boss waves
+            weights["basic"] = 30
+            weights["fast"] = 30
+            weights["tank"] = 40
+            
+            # Add boss enemy if it exists in the enemy types
+            if "boss" in self.enemy_types:
+                weights["boss"] = 15
+                
+        # Convert weights to a list for random.choices
+        enemy_types = list(weights.keys())
+        enemy_weights = list(weights.values())
+        
+        # Select and return an enemy type
+        return random.choices(enemy_types, weights=enemy_weights, k=1)[0]
 
     def update_wave(self):
         """Update wave timer and handle wave transitions"""
@@ -120,9 +138,14 @@ class EnemyManager:
                 self.in_wave_cooldown = False
                 self.wave_timer = 0
                 self.wave_start_time = time.time()
-                self.update_wave_settings()
                 
-                # Announce new wave
+                # Update enemy types for the new wave
+                self.update_enemy_types()
+                
+                # Spawn boss on boss waves
+                if self.current_wave in self.boss_waves:
+                    self.spawn_boss()
+                    
                 print(f"Wave {self.current_wave} started!")
         else:
             self.wave_timer += 1
@@ -130,237 +153,158 @@ class EnemyManager:
                 # End current wave
                 self.in_wave_cooldown = True
                 self.wave_timer = 0
-                
-                # Clear all enemies when wave ends (optional)
-                # self.enemies = []
-                
-                print(f"Wave {self.current_wave} completed! Next wave in {self.wave_cooldown/60} seconds.")
+                print(f"Wave {self.current_wave} completed!")
 
-    def update_wave_settings(self):
-        """Update enemy types and spawn settings based on current wave"""
-        # Define these constants here instead of relying on undefined variables
-        MIN_ENEMIES = 5
+    def update_enemy_types(self):
+        """Update enemy stats based on current wave"""
+        # Define base stats for wave 1
+        base_types = {
+            "basic": {"color": (255, 0, 0), "speed": 1.5, "health": 100, "damage": 10},
+            "fast": {"color": (0, 255, 0), "speed": 2.5, "health": 70, "damage": 8},
+            "tank": {"color": (0, 0, 255), "speed": 0.8, "health": 180, "damage": 15}
+        }
         
-        # Adjust max enemies based on wave
-        self.max_enemies = min(MIN_ENEMIES + self.current_wave, MAX_ENEMIES)
+        # Calculate scaling factor based on current wave
+        scale_factor = 1 + (self.current_wave - 1) * self.scaling["health"]
+        speed_factor = 1 + (self.current_wave - 1) * self.scaling["speed"]
+        damage_factor = 1 + (self.current_wave - 1) * self.scaling["damage"]
         
-        # Adjust spawn delay (faster spawns in later waves)
-        self.spawn_delay = max(SPAWN_DELAY - (self.current_wave * 2), 20)
-        
-        # Unlock enemy types based on wave
-        if self.current_wave >= 3:
-            self.enemy_types["fast"]["weight"] = 40
-        if self.current_wave >= 5:
-            self.enemy_types["tank"]["weight"] = 30
-        if self.current_wave >= 10 and self.current_wave % 5 == 0:
-            self.enemy_types["boss"]["weight"] = 10
-            self.special_events["boss_wave"] = True
-        
-        # Select spawn pattern
-        if self.current_wave % 3 == 0:
-            self.current_spawn_pattern = "surrounding"
-        elif self.current_wave % 4 == 0:
-            self.current_spawn_pattern = "directional"
-        elif self.current_wave % 5 == 0:
-            self.current_spawn_pattern = "corners"
-        else:
-            self.current_spawn_pattern = "random"
+        # Update each enemy type
+        for enemy_type, stats in base_types.items():
+            self.enemy_types[enemy_type] = {
+                "color": stats["color"],
+                "speed": stats["speed"] * speed_factor,
+                "health": int(stats["health"] * scale_factor),
+                "damage": int(stats["damage"] * damage_factor)
+            }
             
-        # Special events
-        if self.current_wave % 7 == 0:
-            self.special_events["horde"] = True
-            self.max_enemies += 5
-            self.spawn_delay = max(10, self.spawn_delay // 2)
-        else:
-            self.special_events["horde"] = False
+        # Add boss type on boss waves
+        if self.current_wave in self.boss_waves:
+            boss_health = int(400 * scale_factor)
+            boss_damage = int(25 * damage_factor)
             
-        if self.current_wave % 6 == 0:
-            self.special_events["elite"] = True
-        else:
-            self.special_events["elite"] = False
+            self.enemy_types["boss"] = {
+                "color": (128, 0, 128),  # Purple
+                "speed": 1.0 * speed_factor,
+                "health": boss_health,
+                "damage": boss_damage
+            }
+            
+        # Print stats for debugging
+        print(f"Wave {self.current_wave} enemy stats:")
+        for enemy_type, stats in self.enemy_types.items():
+            print(f"  {enemy_type}: Health={stats['health']}, Speed={stats['speed']:.2f}, Damage={stats['damage']}")
 
-    def spawn_enemy(self):
-        """Spawn a new enemy based on current settings"""
-        # Select enemy type based on weights
-        enemy_type = self.select_enemy_type()
-        
-        # Get spawn position based on pattern
+    def spawn_boss(self):
+        """Spawn a boss enemy"""
+        # Get spawn position
         spawn_pos = self.get_spawn_position()
-        
-        # Get enemy properties
-        speed_range = self.enemy_types[enemy_type]["speed"]
-        health_range = self.enemy_types[enemy_type]["health"]
-        image_path = self.enemy_types[enemy_type]["image"]
-        
-        # Adjust stats based on wave and special events
-        wave_multiplier = 1.0 + (self.current_wave * 0.1)
-        
-        # Calculate stats
-        speed = random.uniform(speed_range[0], speed_range[1])
-        health = random.randint(int(health_range[0] * wave_multiplier), 
-                               int(health_range[1] * wave_multiplier))
-        
-        # Apply special event modifiers
-        if self.special_events["elite"] and random.random() < 0.3:
-            # Elite enemy (stronger)
-            speed *= 1.2
-            health *= 1.5
+        if spawn_pos is not None:
+            x, y = spawn_pos
+            boss = self.spawn_enemy("boss", x, y)
             
-        if self.special_events["horde"]:
-            # Horde enemies (weaker but more numerous)
-            health *= 0.7
+            # Make boss bigger
+            boss.width = boss.height = 60
+            boss.rect = pygame.Rect(int(boss.x), int(boss.y), boss.width, boss.height)
             
-        if enemy_type == "boss":
-            # Boss enemies
-            health *= 2.0
-            # Spawn some minions around the boss
-            self.spawn_minions(spawn_pos[0], spawn_pos[1])
+            # Create a new image for the boss
+            boss.image = boss.create_enemy_surface()
+            boss.mask = pygame.mask.from_surface(boss.image)
+            
+            print(f"Boss spawned with {boss.health} health!")
+            return boss
+        return None
 
-        # Create the enemy
-        enemy = Enemy(self.game, speed, health, spawn_pos[0], spawn_pos[1])
-        enemy.debug_mode = self.debug_mode
+    def spawn_enemy(self, enemy_type, x, y):
+        """Spawn a new enemy of the specified type"""
+        # Get enemy properties from type
+        properties = self.enemy_types[enemy_type]
         
-        # Set enemy personality based on type
+        # Create enemy with the proper type
+        enemy = Enemy(self.game, properties["speed"], properties["health"], enemy_type, x, y)
+        
+        # Set enemy color
+        enemy.color = properties["color"]
+        
+        # Set damage
+        enemy.damage = properties.get("damage", 10)
+        
+        # Set projectile properties based on enemy type
         if enemy_type == "basic":
-            enemy.personality = random.choice(["aggressive", "cautious", "erratic", "flanker"])
-        elif enemy_type == "fast":
-            enemy.personality = random.choice(["aggressive", "flanker", "erratic"])
-            enemy.detection_radius = 350  # Increased detection for fast enemies
-        elif enemy_type == "tank":
-            enemy.personality = random.choice(["aggressive", "cautious"])
-            enemy.knockback_resistance = 0.8  # Tanks resist knockback
-        elif enemy_type == "boss":
-            enemy.personality = "aggressive"
-            enemy.detection_radius = 500  # Boss has large detection radius
-            enemy.knockback_resistance = 0.9  # Boss highly resists knockback
-        
-        # Add to enemy list
-        self.enemies.append(enemy)
-        self.enemies_spawned += 1
-        
-        # Remember spawn position to avoid clustering
-        self.last_spawn_positions.append(spawn_pos)
-        if len(self.last_spawn_positions) > 5:
-            self.last_spawn_positions.pop(0)
+            enemy.projectile_color = (255, 100, 100)  # Light red
+            enemy.attack_cooldown_max = 120           # 2 seconds at 60 FPS
+            enemy.projectile_speed = 5
+            enemy.projectile_damage = properties.get("damage", 10) * 0.5  # Half of contact damage
+            enemy.projectile_range = 600
             
+        elif enemy_type == "fast":
+            enemy.projectile_color = (100, 255, 100)  # Light green
+            enemy.attack_cooldown_max = 90            # 1.5 seconds at 60 FPS
+            enemy.projectile_speed = 7
+            enemy.projectile_damage = properties.get("damage", 8) * 0.4   # Less damage
+            enemy.projectile_range = 500
+            
+        elif enemy_type == "tank":
+            enemy.projectile_color = (100, 100, 255)  # Light blue
+            enemy.attack_cooldown_max = 180           # 3 seconds at 60 FPS
+            enemy.projectile_speed = 4
+            enemy.projectile_damage = properties.get("damage", 15) * 0.6  # More damage
+            enemy.projectile_range = 700
+            
+        elif enemy_type == "boss":
+            enemy.projectile_color = (200, 50, 200)   # Purple
+            enemy.attack_cooldown_max = 60            # 1 second at 60 FPS
+            enemy.projectile_speed = 6
+            enemy.projectile_damage = properties.get("damage", 25) * 0.5  # High damage
+            enemy.projectile_range = 800
+            enemy.attack_range = 400                  # Longer attack range
+        
+        # Set size based on type
+        if enemy_type == "basic":
+            enemy.width = enemy.height = 30
+        elif enemy_type == "fast":
+            enemy.width = enemy.height = 25
+        elif enemy_type == "tank":
+            enemy.width = enemy.height = 40
+        elif enemy_type == "boss":
+            enemy.width = enemy.height = 60
+            
+        # Update rect size
+        enemy.rect = pygame.Rect(int(enemy.x), int(enemy.y), enemy.width, enemy.height)
+        
+        # Try to load the image first
+        enemy.image = enemy.load_image()
+        
+        # If image loading failed, create a fallback surface
+        if enemy.image is None:
+            enemy.image = enemy.create_enemy_surface()
+            
+        # Create mask for collision detection
+        enemy.mask = pygame.mask.from_surface(enemy.image)
+        
+        # Add enemy to the list
+        self.enemies.append(enemy)
         return enemy
 
-    def select_enemy_type(self):
-        """Select an enemy type based on weights"""
-        # Calculate total weight
-        total_weight = sum(self.enemy_types[enemy_type]["weight"] for enemy_type in self.enemy_types)
-        
-        if total_weight == 0:
-            return "basic"  # Default if no weights set
-            
-        # Select based on weight
-        r = random.randint(1, total_weight)
-        current_weight = 0
-        
-        for enemy_type in self.enemy_types:
-            current_weight += self.enemy_types[enemy_type]["weight"]
-            if r <= current_weight:
-                return enemy_type
-                
-        return "basic"  # Fallback
-
     def get_spawn_position(self):
-        """Get spawn position based on current pattern"""
+        """Get spawn position around the player"""
         player_x, player_y = self.game.player.x, self.game.player.y
         
-        if self.current_spawn_pattern == "surrounding":
-            # Spawn in a circle around the player
-            angle = random.uniform(0, 2 * math.pi)
-            distance = random.randint(400, 600)
-            x = player_x + math.cos(angle) * distance
-            y = player_y + math.sin(angle) * distance
-            
-        elif self.current_spawn_pattern == "directional":
-            # Spawn from one direction
-            if not hasattr(self, 'current_direction'):
-                self.current_direction = random.choice(["north", "south", "east", "west"])
-                
-            if self.current_direction == "north":
-                x = random.randint(0, MAP_WIDTH)
-                y = random.randint(0, 200)
-            elif self.current_direction == "south":
-                x = random.randint(0, MAP_WIDTH)
-                y = random.randint(MAP_HEIGHT - 200, MAP_HEIGHT)
-            elif self.current_direction == "east":
-                x = random.randint(MAP_WIDTH - 200, MAP_WIDTH)
-                y = random.randint(0, MAP_HEIGHT)
-            else:  # west
-                x = random.randint(0, 200)
-                y = random.randint(0, MAP_HEIGHT)
-                
-        elif self.current_spawn_pattern == "corners":
-            # Spawn from map corners
-            corner = random.randint(0, 3)
-            if corner == 0:  # Top-left
-                x = random.randint(0, 300)
-                y = random.randint(0, 300)
-            elif corner == 1:  # Top-right
-                x = random.randint(MAP_WIDTH - 300, MAP_WIDTH)
-                y = random.randint(0, 300)
-            elif corner == 2:  # Bottom-left
-                x = random.randint(0, 300)
-                y = random.randint(MAP_HEIGHT - 300, MAP_HEIGHT)
-            else:  # Bottom-right
-                x = random.randint(MAP_WIDTH - 300, MAP_WIDTH)
-                y = random.randint(MAP_HEIGHT - 300, MAP_HEIGHT)
-                
-        else:  # random
-            # Find a spawn position away from the player but within the map
-            attempts = 0
-            while attempts < 10:  # Limit attempts to prevent infinite loop
-                x = random.randint(0, MAP_WIDTH - 50)
-                y = random.randint(0, MAP_HEIGHT - 50)
-                
-                # Check distance from player
-                distance = ((player_x - x) ** 2 + (player_y - y) ** 2) ** 0.5
-                
-                # Check distance from recent spawn positions to avoid clustering
-                too_close_to_recent = False
-                for pos in self.last_spawn_positions:
-                    if ((pos[0] - x) ** 2 + (pos[1] - y) ** 2) ** 0.5 < 150:
-                        too_close_to_recent = True
-                        break
-                        
-                if distance > 300 and not too_close_to_recent:
-                    break
-                    
-                attempts += 1
+        # Define minimum and maximum spawn distance from player
+        min_distance = 200
+        max_distance = 500
+        
+        # Random position around player
+        angle = random.uniform(0, 2 * math.pi)
+        distance = random.randint(min_distance, max_distance)
+        x = player_x + math.cos(angle) * distance
+        y = player_y + math.sin(angle) * distance
         
         # Ensure spawn is within map bounds
         x = max(50, min(x, MAP_WIDTH - 50))
         y = max(50, min(y, MAP_HEIGHT - 50))
         
         return (x, y)
-
-    def spawn_minions(self, boss_x, boss_y):
-        """Spawn minions around a boss"""
-        num_minions = random.randint(3, 5)
-        
-        for _ in range(num_minions):
-            angle = random.uniform(0, 2 * math.pi)
-            distance = random.randint(100, 200)
-            x = boss_x + math.cos(angle) * distance
-            y = boss_y + math.sin(angle) * distance
-            
-            # Ensure within map bounds
-            x = max(50, min(x, MAP_WIDTH - 50))
-            y = max(50, min(y, MAP_HEIGHT - 50))
-            
-            # Create minion (faster but weaker)
-            speed = random.uniform(1.5, 2.5)
-            health = random.randint(50, 80)
-            
-            minion = Enemy(self.game, speed, health, x, y)
-            minion.debug_mode = self.debug_mode
-            minion.personality = "aggressive"  # Minions are always aggressive
-            
-            self.enemies.append(minion)
-            self.enemies_spawned += 1
 
     def draw(self, surface):
         for enemy in self.enemies:
@@ -373,57 +317,58 @@ class EnemyManager:
                 
                 # Draw enemy at camera-adjusted position
                 enemy.draw_with_camera(surface, camera_pos)
-        
-        # Draw wave information if in debug mode
-        if self.debug_mode:
-            font = pygame.font.SysFont(None, 24)
-            
-            # Wave info
-            wave_text = font.render(f"Wave: {self.current_wave}", True, (255, 255, 255))
-            surface.blit(wave_text, (10, 10))
-            
-            # Wave timer
-            elapsed = time.time() - self.wave_start_time
-            if self.in_wave_cooldown:
-                timer_text = font.render(f"Next wave in: {(self.wave_cooldown - self.wave_timer) / 60:.1f}s", True, (255, 255, 255))
-            else:
-                timer_text = font.render(f"Wave time: {elapsed:.1f}s", True, (255, 255, 255))
-            surface.blit(timer_text, (10, 30))
-            
-            # Enemy count
-            count_text = font.render(f"Enemies: {len(self.enemies)}/{self.max_enemies}", True, (255, 255, 255))
-            surface.blit(count_text, (10, 50))
-            
-            # Spawn pattern
-            pattern_text = font.render(f"Pattern: {self.current_spawn_pattern}", True, (255, 255, 255))
-            surface.blit(pattern_text, (10, 70))
-            
-            # Special events
-            events = []
-            for event, active in self.special_events.items():
-                if active:
-                    events.append(event)
-            
-            if events:
-                events_text = font.render(f"Events: {', '.join(events)}", True, (255, 255, 0))
-                surface.blit(events_text, (10, 90))
-    
-    def toggle_debug(self):
-        """Toggle debug mode for hitbox visualization"""
-        self.debug_mode = not self.debug_mode
+                
+                # Draw health bar
+                self.draw_health_bar(surface, enemy, camera_pos)
+                
+                # Draw enemy type indicator (optional)
+                if self.current_wave >= 5:  # Only show enemy type after wave 5
+                    self.draw_enemy_type(surface, enemy, camera_pos)
+                
+                # Draw enemy projectiles
+                for projectile in enemy.projectiles:
+                    if projectile.active:
+                        # Calculate projectile's camera position
+                        proj_camera_x = projectile.x - self.game.camera.x
+                        proj_camera_y = projectile.y - self.game.camera.y
+                        proj_camera_pos = (proj_camera_x, proj_camera_y)
+                        
+                        # Draw projectile with camera offset
+                        projectile.draw_with_camera(surface, proj_camera_pos)
 
-    def get_stats(self):
-        """Return statistics about enemies"""
-        return {
-            "current_wave": self.current_wave,
-            "enemies_alive": len(self.enemies),
-            "enemies_spawned": self.enemies_spawned,
-            "enemies_killed": self.enemies_killed,
-            "max_enemies": self.max_enemies,
-            "spawn_delay": self.spawn_delay,
-            "wave_time": time.time() - self.wave_start_time
-        }
+    def draw_health_bar(self, surface, enemy, camera_pos):
+        """Draw health bar above enemy"""
+        bar_width = enemy.width
+        bar_height = 5
+        
+        # Position above enemy
+        bar_x = camera_pos[0]
+        bar_y = camera_pos[1] - 10
+        
+        # Background (red)
+        pygame.draw.rect(surface, (255, 0, 0), 
+                        (bar_x, bar_y, bar_width, bar_height))
+        
+        # Health (green)
+        health_width = (enemy.health / enemy.max_health) * bar_width
+        pygame.draw.rect(surface, (0, 255, 0), 
+                        (bar_x, bar_y, health_width, bar_height))
+
+    def draw_enemy_type(self, surface, enemy, camera_pos):
+        """Draw a small indicator of enemy type"""
+        if enemy.enemy_type == "boss":
+            # Draw a crown for boss
+            points = [
+                (camera_pos[0] + enemy.width//2, camera_pos[1] - 15),
+                (camera_pos[0] + enemy.width//2 - 10, camera_pos[1] - 5),
+                (camera_pos[0] + enemy.width//2 + 10, camera_pos[1] - 5)
+            ]
+            pygame.draw.polygon(surface, (255, 215, 0), points)  # Gold color
 
     def clear_all_enemies(self):
-        """Remove all enemies (for level transitions, etc.)"""
+        """Remove all enemies"""
+        for enemy in self.enemies:
+            # Deactivate all projectiles
+            for projectile in enemy.projectiles:
+                projectile.active = False
         self.enemies = []

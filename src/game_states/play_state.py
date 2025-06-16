@@ -202,6 +202,7 @@ class PlayState(GameState):
                     break
 
     def update(self): 
+
         # Update player
         self.player.update()
         
@@ -288,16 +289,8 @@ class PlayState(GameState):
                 (indicator_screen_x - indicator_size // 2, indicator_screen_y - indicator_size // 2)
             )
         
-        # Draw enemies with camera offset
-        for enemy in self.enemy_manager.enemies:
-            if enemy.alive:
-                # Get camera-adjusted position
-                camera_pos = self.game.camera.apply(enemy)
-                # Only draw if on screen (with some margin)
-                if (-100 <= camera_pos[0] <= SCREEN_WIDTH + 100 and 
-                    -100 <= camera_pos[1] <= SCREEN_HEIGHT + 100):
-                    # Use the enemy's draw_with_camera method instead of directly blitting
-                    enemy.draw_with_camera(screen, camera_pos)
+        # Use the enemy manager's draw method instead of manually drawing enemies
+        self.enemy_manager.draw(screen)
         
         # Draw player with camera offset
         player_pos = self.game.camera.apply(self.player)
